@@ -25,7 +25,7 @@ if "if"
 then "then"
 else "else"
 digit   [0-9]
-identifier    [a-zA-Z][a-zA-Z0-9]*
+identifier    [a-zA-Z_$][a-zA-Z0-9_$]*
 whitespace [ \t\n]+
 tokens [()=,*/+-]
 %X COMMENT
