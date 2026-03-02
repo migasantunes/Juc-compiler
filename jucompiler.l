@@ -14,7 +14,7 @@ static int comment_start_col = 1;
 
 static int string_start_line = 1;
 static int string_start_col = 1;
-static int string_has_error = 0;
+static bool string_has_error = false;
 
 static char string_buffer[8192];
 static int string_pos = 0;
@@ -175,7 +175,7 @@ WHITE_SPACE          [ \t\f\r\n]+
     string_start_line = token_line;
     string_start_col = token_col;
     string_pos = 0;
-    string_has_error = 0;
+    string_has_error = false;
     BEGIN(STRING);
 }
 
@@ -183,14 +183,14 @@ WHITE_SPACE          [ \t\f\r\n]+
 <STRING>\\[fnrt\\\"]  { append_to_string(yytext); }
 <STRING>\\\r\n|\\\n|\\\r {
     print_invalid_escape_text("\\");
-    string_has_error = 1;
+    string_has_error = true;
     print_unterminated_string();
     BEGIN(INITIAL);
 }
-<STRING>\\[^fnrt\\\"\n\r] {printf("Line %d, col %d: invalid escape sequence (%s)\n", token_line, token_col, yytext); string_has_error = 1; }
+<STRING>\\[^fnrt\\\"\n\r] {printf("Line %d, col %d: invalid escape sequence (%s)\n", token_line, token_col, yytext); string_has_error = true; }
 <STRING>\\ {
     print_invalid_escape_text("\\");
-    string_has_error = 1;
+    string_has_error = true;
 }
 <STRING>\" {
     string_buffer[string_pos] = '\0';
