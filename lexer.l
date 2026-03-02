@@ -19,6 +19,8 @@
         COUNT(); \
     } while (0);
 %}
+boollit "true"|"false"
+and "&&"
 integer "integer"
 double "double"
 if "if"
@@ -26,6 +28,7 @@ then "then"
 else "else"
 digit   [0-9]
 identifier    [a-zA-Z_$][a-zA-Z0-9_$]*
+natural 0|[1-9]|[1-9][0-9_]*[0-9]
 whitespace [ \t\n]+
 tokens [()=,*/+-]
 %X COMMENT
@@ -57,7 +60,7 @@ tokens [()=,*/+-]
 {if}                    { printf("IF\n"); }
 {then}                  { printf("THEN\n"); }
 {else}                  { printf("ELSE\n"); }
-{digit}+                { printf("NATURAL(%s)\n", yytext); }
+{natural}               { printf("NATURAL(%s)\n", yytext); }
 {digit}*"."{digit}+     { printf("DECIMAL(%s)\n", yytext); }
 {identifier}            { printf("IDENTIFIER(%s)\n", yytext); }
 {tokens}                { printf("%s\n", yytext); }
