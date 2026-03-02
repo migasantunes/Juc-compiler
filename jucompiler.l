@@ -7,7 +7,7 @@ static int current_col = 1;
 static int token_line = 1;
 static int token_col = 1;
 
-static int emit_tokens = 0;
+static bool emit_tokens = false;
 
 static int comment_start_line = 1;
 static int comment_start_col = 1;
@@ -231,9 +231,9 @@ WHITE_SPACE          [ \t\f\r\n]+
 
 int main(int argc, char **argv) {
     if (argc > 1 && strcmp(argv[1], "-l") == 0) {
-        emit_tokens = 1;
+        emit_tokens = true;
     } else {
-        emit_tokens = 0;
+        emit_tokens = false;
     }
 
     yylex();
