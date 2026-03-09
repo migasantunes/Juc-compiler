@@ -95,13 +95,8 @@ static void classify_identifier(const char *id) {
         strcmp(id, "super") == 0 || strcmp(id, "switch") == 0 || strcmp(id, "synchronized") == 0 ||
         strcmp(id, "this") == 0 || strcmp(id, "throw") == 0 || strcmp(id, "throws") == 0 ||
         strcmp(id, "transient") == 0 || strcmp(id, "try") == 0 || strcmp(id, "volatile") == 0 ||
-        strcmp(id, "Integer") == 0 || strcmp(id, "System") == 0
+        strcmp(id, "Integer") == 0 || strcmp(id, "System") == 0 || strcmp(id, "null") == 0
     ) {
-        emit_value("RESERVED", id);
-        return;
-    }
-
-    if (strcmp(id, "null") == 0) {
         emit_value("RESERVED", id);
         return;
     }
@@ -118,14 +113,12 @@ static void classify_identifier(const char *id) {
 
 %option noyywrap
 
-DIGIT       [0-9]
-ID_START    [A-Za-z_$]
-ID_PART     [A-Za-z0-9_$]
-IDENTIFIER  {ID_START}{ID_PART}*
-NUMSEQ      {DIGIT}([0-9_]*{DIGIT})?
-NATURAL     0|[1-9]([0-9_]*{DIGIT})?
-EXPONENT    [eE][+-]?{NUMSEQ}
-DECIMAL    {NUMSEQ}\.{NUMSEQ}?({EXPONENT})?|\.{NUMSEQ}({EXPONENT})?|{NUMSEQ}{EXPONENT}
+DIGIT                [0-9]
+IDENTIFIER           [A-Za-z_$][A-Za-z0-9_$]*
+NUMSEQ               {DIGIT}|{DIGIT}[0-9_]*{DIGIT}
+NATURAL              {DIGIT}|[1-9][0-9_]*{DIGIT}
+EXPONENT             [eE][+-]?{NUMSEQ}
+DECIMAL              {NUMSEQ}\.{NUMSEQ}?({EXPONENT})?|\.{NUMSEQ}({EXPONENT})?|{NUMSEQ}{EXPONENT}
 WHITE_SPACE          [ \t\f\r\n]+
 
 %x COMMENT
@@ -168,8 +161,8 @@ WHITE_SPACE          [ \t\f\r\n]+
 ";"                     { emit_simple("SEMICOLON"); }
 "^"                     { emit_simple("XOR"); }
 
-{DECIMAL}                       { emit_value("DECIMAL", yytext); }
-{NATURAL}                       { emit_value("NATURAL", yytext); }
+{DECIMAL}               { emit_value("DECIMAL", yytext); }
+{NATURAL}               { emit_value("NATURAL", yytext); }
 
 "\"" {
     string_start_line = token_line;
@@ -179,8 +172,8 @@ WHITE_SPACE          [ \t\f\r\n]+
     BEGIN(STRING);
 }
 
-<STRING>[^\\"\n\r]+   { append_to_string(yytext); }
-<STRING>\\[fnrt\\\"]  { append_to_string(yytext); }
+<STRING>[^\\"\n\r]+      { append_to_string(yytext); }
+<STRING>\\[fnrt\\\"]     { append_to_string(yytext); }
 <STRING>\\\r\n|\\\n|\\\r {
     print_invalid_escape_text("\\");
     string_has_error = true;
@@ -208,21 +201,21 @@ WHITE_SPACE          [ \t\f\r\n]+
     return 0;
 }
 
-"//"[^\r\n]*            { }
+"//"[^\r\n]*              { }
 "/*" {
     comment_start_line = token_line;
     comment_start_col = token_col;
     BEGIN(COMMENT);
 }
 <COMMENT>"*/"             { BEGIN(INITIAL); }
-<COMMENT>\r\n|\n|\r     { }
+<COMMENT>\r\n|\n|\r       { }
 <COMMENT>.                { }
 <COMMENT><<EOF>> {
     printf("Line %d, col %d: unterminated comment\n", comment_start_line, comment_start_col);
     return 0;
 }
 
-{WHITE_SPACE}                      { }
+{WHITE_SPACE}             { }
 {IDENTIFIER}              { classify_identifier(yytext); }
 
 .                         { printf("Line %d, col %d: illegal character (%s)\n", token_line, token_col, yytext); }
