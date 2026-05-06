@@ -1,7 +1,14 @@
 #!/bin/bash
+set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"
 
+if ! make -s; then
+    echo "BUILD FAILED (run make for details)"
+    exit 1
+fi
+
+set +e
 passed=0; failed=0; runtime=0; skipped=0
 
 for f in all_meta_tests/meta4/*.java; do

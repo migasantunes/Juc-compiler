@@ -226,6 +226,30 @@ static void vars_add(CG *cg, const char *name, ValTy ty, const char *ptr, bool i
     cg->vars = v;
 }
 
+/* Match semantics: same name can refer to a field or a later local shadow (different types). */
+static VarSlot *resolve_storage(CG *cg, Node *id) {
+    if (id == NULL || id->value == NULL) return NULL;
+    ValTy want = ty_from_annot(id->annot);
+    for (VarSlot *v = cg->vars; v != NULL; v = v->next) {
+        if (strcmp(v->name, id->value) != 0) continue;
+        if (v->ty != want) continue;
+        return v;
+    }
+    for (Symbol *sym = class_table ? class_table->symbols : NULL; sym != NULL; sym = sym->next) {
+        if (sym->is_method || strcmp(sym->name, id->value) != 0) continue;
+        ValTy t = ty_from_annot(
+            sym->type == TYPE_INT ? "int" :
+            sym->type == TYPE_DOUBLE ? "double" :
+            sym->type == TYPE_BOOL ? "boolean" : "int");
+        if (t != want) continue;
+        vars_add(cg, sym->name, t, sym->name, true);
+        if (cg->vars && strcmp(cg->vars->name, id->value) == 0 && cg->vars->ty == want)
+            return cg->vars;
+        break;
+    }
+    return NULL;
+}
+
 static const char *mangle_type(ValTy t) {
     switch (t) {
         case VT_I32: return "int";
@@ -289,6 +313,49 @@ typedef struct { ValTy ty; char *reg; } RVal;
 static RVal gen_expr(CG *cg, Node *e);
 static void gen_stmt(CG *cg, Node *s, ValTy ret_ty, char **ret_slot_ptr);
 
+/* Java int / and % throw ArithmeticException on b==0; int / on INT_MIN / -1. Approximate with trap. */
+static void emit_guarded_sdiv(CG *cg, const char *a_reg, const char *b_reg, const char *res_reg) {
+    char *lab_bad = new_label(cg, "idiv.bad.");
+    char *lab_ok = new_label(cg, "idiv.ok.");
+    char *r0 = new_reg(cg);
+    char *r1 = new_reg(cg);
+    char *r2 = new_reg(cg);
+    char *r3 = new_reg(cg);
+    char *r4 = new_reg(cg);
+    cg_emit(cg, "  %s = icmp eq i32 %s, 0\n", r0, b_reg);
+    cg_emit(cg, "  %s = icmp eq i32 %s, -2147483648\n", r1, a_reg);
+    cg_emit(cg, "  %s = icmp eq i32 %s, -1\n", r2, b_reg);
+    cg_emit(cg, "  %s = and i1 %s, %s\n", r3, r1, r2);
+    cg_emit(cg, "  %s = or i1 %s, %s\n", r4, r0, r3);
+    cg_emit(cg, "  br i1 %s, label %%%s, label %%%s\n", r4, lab_bad, lab_ok);
+    cg_emit(cg, "%s:\n", lab_bad);
+    cg_set_block(cg, lab_bad);
+    cg_emit(cg, "  call void @llvm.trap()\n");
+    cg_emit(cg, "  unreachable\n");
+    cg_emit(cg, "%s:\n", lab_ok);
+    cg_set_block(cg, lab_ok);
+    cg_emit(cg, "  %s = sdiv i32 %s, %s\n", res_reg, a_reg, b_reg);
+    free(r0); free(r1); free(r2); free(r3); free(r4);
+    free(lab_bad); free(lab_ok);
+}
+
+static void emit_guarded_srem(CG *cg, const char *a_reg, const char *b_reg, const char *res_reg) {
+    char *lab_bad = new_label(cg, "irem.bad.");
+    char *lab_ok = new_label(cg, "irem.ok.");
+    char *z = new_reg(cg);
+    cg_emit(cg, "  %s = icmp eq i32 %s, 0\n", z, b_reg);
+    cg_emit(cg, "  br i1 %s, label %%%s, label %%%s\n", z, lab_bad, lab_ok);
+    free(z);
+    cg_emit(cg, "%s:\n", lab_bad);
+    cg_set_block(cg, lab_bad);
+    cg_emit(cg, "  call void @llvm.trap()\n");
+    cg_emit(cg, "  unreachable\n");
+    cg_emit(cg, "%s:\n", lab_ok);
+    cg_set_block(cg, lab_ok);
+    cg_emit(cg, "  %s = srem i32 %s, %s\n", res_reg, a_reg, b_reg);
+    free(lab_bad); free(lab_ok);
+}
+
 static int parse_sig_param_types(const char *annot, ValTy *out, int max) {
     if (annot == NULL || max <= 0) return 0;
     const char *p = annot;
@@ -310,57 +377,6 @@ static RVal make_rval(ValTy ty, char *reg) {
     RVal r; r.ty = ty; r.reg = reg; return r;
 }
 
-static RVal gen_load_var(CG *cg, Node *id) {
-    VarSlot *v = vars_find(cg, id->value);
-    if (v == NULL) {
-        /* fallback to globals */
-        for (Symbol *sym = class_table ? class_table->symbols : NULL; sym != NULL; sym = sym->next) {
-            if (!sym->is_method && strcmp(sym->name, id->value) == 0) {
-                ValTy t = ty_from_annot(
-                    sym->type == TYPE_INT ? "int" :
-                    sym->type == TYPE_DOUBLE ? "double" :
-                    sym->type == TYPE_BOOL ? "boolean" : "int"
-                );
-                vars_add(cg, sym->name, t, sym->name, true);
-                v = vars_find(cg, sym->name);
-                break;
-            }
-        }
-    }
-    if (v == NULL) return make_rval(VT_I32, strdup("0"));
-    char *tmp = new_reg(cg);
-    if (v->is_global) {
-        cg_emit(cg, "  %s = load %s, %s* @%s\n", tmp, llvm_ty(v->ty), llvm_ty(v->ty), v->ptr);
-    } else {
-        cg_emit(cg, "  %s = load %s, %s* %s\n", tmp, llvm_ty(v->ty), llvm_ty(v->ty), v->ptr);
-    }
-    return make_rval(v->ty, tmp);
-}
-
-static void gen_store_var(CG *cg, const char *name, RVal val) {
-    VarSlot *v = vars_find(cg, name);
-    if (v == NULL) {
-        for (Symbol *sym = class_table ? class_table->symbols : NULL; sym != NULL; sym = sym->next) {
-            if (!sym->is_method && strcmp(sym->name, name) == 0) {
-                ValTy t = ty_from_annot(
-                    sym->type == TYPE_INT ? "int" :
-                    sym->type == TYPE_DOUBLE ? "double" :
-                    sym->type == TYPE_BOOL ? "boolean" : "int"
-                );
-                vars_add(cg, sym->name, t, sym->name, true);
-                v = vars_find(cg, sym->name);
-                break;
-            }
-        }
-    }
-    if (v == NULL) return;
-    if (v->is_global) {
-        cg_emit(cg, "  store %s %s, %s* @%s\n", llvm_ty(val.ty), val.reg, llvm_ty(val.ty), v->ptr);
-    } else {
-        cg_emit(cg, "  store %s %s, %s* %s\n", llvm_ty(val.ty), val.reg, llvm_ty(val.ty), v->ptr);
-    }
-}
-
 static RVal gen_cast(CG *cg, RVal v, ValTy to) {
     if (v.ty == to) return v;
     if (v.ty == VT_I32 && to == VT_DBL) {
@@ -378,6 +394,45 @@ static RVal gen_cast(CG *cg, RVal v, ValTy to) {
     return v;
 }
 
+/* Java/Juc assignment conversion to LHS slot type (valid programs: int→double widening only). */
+static RVal coerce_rval_to(CG *cg, RVal v, ValTy to) {
+    if (v.ty == to) return v;
+    if (v.ty == VT_I32 && to == VT_DBL) return gen_cast(cg, v, VT_DBL);
+    /* Defensive: keep IR valid if slot type and value type ever disagree */
+    if (v.ty == VT_DBL && to == VT_I32) {
+        char *r = new_reg(cg);
+        cg_emit(cg, "  %s = fptosi double %s to i32\n", r, v.reg);
+        free(v.reg);
+        return make_rval(VT_I32, r);
+    }
+    if (v.ty == VT_I1 && to == VT_I32) return gen_cast(cg, v, VT_I32);
+    return v;
+}
+
+static RVal gen_load_var(CG *cg, Node *id) {
+    VarSlot *v = resolve_storage(cg, id);
+    if (v == NULL) return make_rval(VT_I32, strdup("0"));
+    char *tmp = new_reg(cg);
+    if (v->is_global) {
+        cg_emit(cg, "  %s = load %s, %s* @%s\n", tmp, llvm_ty(v->ty), llvm_ty(v->ty), v->ptr);
+    } else {
+        cg_emit(cg, "  %s = load %s, %s* %s\n", tmp, llvm_ty(v->ty), llvm_ty(v->ty), v->ptr);
+    }
+    return make_rval(v->ty, tmp);
+}
+
+static void gen_store_var(CG *cg, Node *lhs_id, RVal val) {
+    VarSlot *v = resolve_storage(cg, lhs_id);
+    if (v == NULL) return;
+    /* Value type must match the alloca's element type — never use val.ty for the pointer operand. */
+    RVal adapted = coerce_rval_to(cg, val, v->ty);
+    if (v->is_global) {
+        cg_emit(cg, "  store %s %s, %s* @%s\n", llvm_ty(v->ty), adapted.reg, llvm_ty(v->ty), v->ptr);
+    } else {
+        cg_emit(cg, "  store %s %s, %s* %s\n", llvm_ty(v->ty), adapted.reg, llvm_ty(v->ty), v->ptr);
+    }
+}
+
 static RVal gen_short_circuit(CG *cg, Node *e, bool is_and) {
     /* Produces i1 with proper short-circuit */
     RVal lhs = gen_expr(cg, e->child);
@@ -389,6 +444,7 @@ static RVal gen_short_circuit(CG *cg, Node *e, bool is_and) {
     snprintf(pred_lhs, sizeof(pred_lhs), "%s", cg->cur_block[0] ? cg->cur_block : "entry");
     if (is_and) cg_emit(cg, "  br i1 %s, label %%%s, label %%%s\n", lhs.reg, lbl_rhs, lbl_end);
     else        cg_emit(cg, "  br i1 %s, label %%%s, label %%%s\n", lhs.reg, lbl_end, lbl_rhs);
+    free(lhs.reg);
 
     cg_emit(cg, "%s:\n", lbl_rhs);
     cg_set_block(cg, lbl_rhs);
@@ -425,7 +481,7 @@ static RVal gen_expr(CG *cg, Node *e) {
     if (strcmp(e->type, "Length") == 0) {
         /* args.length */
         Node *id = e->child;
-        VarSlot *v = vars_find(cg, id->value);
+        VarSlot *v = resolve_storage(cg, id);
         if (v == NULL || v->ty != VT_SARR) return make_rval(VT_I32, strdup("0"));
         char *tmp = new_reg(cg);
         cg_emit(cg, "  %s = load %%StringArray, %%StringArray* %s\n", tmp, v->ptr);
@@ -437,7 +493,14 @@ static RVal gen_expr(CG *cg, Node *e) {
     if (strcmp(e->type, "ParseArgs") == 0) {
         Node *id = e->child;
         Node *idx = id ? id->sibling : NULL;
-        VarSlot *v = id ? vars_find(cg, id->value) : NULL;
+        VarSlot *v = id ? resolve_storage(cg, id) : NULL;
+        if (v == NULL || v->ty != VT_SARR) {
+            if (idx) {
+                RVal ridx = gen_expr(cg, idx);
+                free(ridx.reg);
+            }
+            return make_rval(VT_I32, strdup("0"));
+        }
         RVal ridx = gen_expr(cg, idx);
         if (ridx.ty != VT_I32) ridx = gen_cast(cg, ridx, VT_I32);
         char *arr = new_reg(cg);
@@ -495,8 +558,8 @@ static RVal gen_expr(CG *cg, Node *e) {
         Node *rhsn = id ? id->sibling : NULL;
         RVal rhs = gen_expr(cg, rhsn);
         ValTy dest = ty_from_annot(id->annot);
-        if (dest == VT_DBL && rhs.ty == VT_I32) rhs = gen_cast(cg, rhs, VT_DBL);
-        gen_store_var(cg, id->value, rhs);
+        rhs = coerce_rval_to(cg, rhs, dest); /* widening / Java assignment conversion to LHS type */
+        gen_store_var(cg, id, rhs);
         return rhs;
     }
 
@@ -542,21 +605,31 @@ static RVal gen_expr(CG *cg, Node *e) {
         if (b.ty == VT_I32) b = gen_cast(cg, b, VT_DBL);
     }
 
-    if (strcmp(op, "Add") == 0 || strcmp(op, "Sub") == 0 || strcmp(op, "Mul") == 0 || strcmp(op, "Div") == 0) {
+    if (strcmp(op, "Add") == 0 || strcmp(op, "Sub") == 0 || strcmp(op, "Mul") == 0) {
         bool isdbl = (a.ty == VT_DBL);
         char *res = new_reg(cg);
         const char *ins =
             strcmp(op, "Add") == 0 ? (isdbl ? "fadd" : "add") :
             strcmp(op, "Sub") == 0 ? (isdbl ? "fsub" : "sub") :
-            strcmp(op, "Mul") == 0 ? (isdbl ? "fmul" : "mul") :
-                                     (isdbl ? "fdiv" : "sdiv");
+                                     (isdbl ? "fmul" : "mul");
         cg_emit(cg, "  %s = %s %s %s, %s\n", res, ins, llvm_ty(a.ty), a.reg, b.reg);
+        free(a.reg); free(b.reg);
+        return make_rval(a.ty, res);
+    }
+    if (strcmp(op, "Div") == 0) {
+        bool isdbl = (a.ty == VT_DBL);
+        char *res = new_reg(cg);
+        if (isdbl) {
+            cg_emit(cg, "  %s = fdiv double %s, %s\n", res, a.reg, b.reg);
+        } else {
+            emit_guarded_sdiv(cg, a.reg, b.reg, res);
+        }
         free(a.reg); free(b.reg);
         return make_rval(a.ty, res);
     }
     if (strcmp(op, "Mod") == 0) {
         char *res = new_reg(cg);
-        cg_emit(cg, "  %s = srem i32 %s, %s\n", res, a.reg, b.reg);
+        emit_guarded_srem(cg, a.reg, b.reg, res);
         free(a.reg); free(b.reg);
         return make_rval(VT_I32, res);
     }
@@ -837,6 +910,7 @@ void codegen_program(Node *program, FILE *out) {
     cg_emit(&cg, "; ModuleID = 'juc'\n");
     cg_emit(&cg, "declare i32 @printf(i8*, ...)\n");
     cg_emit(&cg, "declare i32 @atoi(i8*)\n");
+    cg_emit(&cg, "declare void @llvm.trap()\n");
     cg_emit(&cg, "%%StringArray = type { i8**, i32 }\n\n");
 
     cg_emit(&cg, "@.fmt_d = private constant [3 x i8] c\"%%d\\00\"\n");

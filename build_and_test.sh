@@ -1,13 +1,10 @@
 #!/bin/bash
-export SDKROOT=$(xcrun --show-sdk-path)
+set -e
+export SDKROOT="$(xcrun --show-sdk-path)"
 cd "$(dirname "$0")"
 
-echo "=== Building ==="
-clang -Wall -g -o jucompiler y.tab.c lex.yy.c ast.c semantics.c codegen.c io.c 2>&1
-if [ $? -ne 0 ]; then
-    echo "BUILD FAILED"
-    exit 1
-fi
+echo "=== Building (make) ==="
+make -s
 echo "BUILD OK"
 
 echo ""
