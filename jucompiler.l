@@ -1,13 +1,18 @@
 %{
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
+#include "y.tab.h"
 
-static int current_line = 1;
-static int current_col = 1;
-static int token_line = 1;
-static int token_col = 1;
+extern YYLTYPE yylloc;
 
-static bool emit_tokens = false;
+int current_line = 1;
+int current_col = 1;
+int token_line = 1;
+int token_col = 1;
+
+bool emit_tokens = false;
 
 static int comment_start_line = 1;
 static int comment_start_col = 1;
@@ -16,8 +21,12 @@ static int string_start_line = 1;
 static int string_start_col = 1;
 static bool string_has_error = false;
 
-static char string_buffer[8192];
+static char *string_buffer = NULL;
+static int string_capacity = 0;
 static int string_pos = 0;
+
+
+char *current_error_yytext = "";
 
 static void advance_position(const char *text) {
     int i;
@@ -37,12 +46,23 @@ static void advance_position(const char *text) {
     }
 }
 
+static void ensure_capacity(int added_len) {
+    if (string_capacity == 0) {
+        string_capacity = 256;
+        string_buffer = (char *)malloc(string_capacity);
+    }
+    while (string_pos + added_len + 1 >= string_capacity) {
+        string_capacity *= 2;
+        string_buffer = (char *)realloc(string_buffer, string_capacity);
+    }
+}
+
 static void append_to_string(const char *text) {
     int i;
-    for (i = 0; text[i] != '\0'; i++) {
-        if (string_pos < (int)sizeof(string_buffer) - 1) {
-            string_buffer[string_pos++] = text[i];
-        }
+    int len = strlen(text);
+    ensure_capacity(len);
+    for (i = 0; i < len; i++) {
+        string_buffer[string_pos++] = text[i];
     }
 }
 
@@ -66,20 +86,25 @@ static void print_unterminated_string(void) {
     printf("Line %d, col %d: unterminated string literal\n", string_start_line, string_start_col);
 }
 
-static void classify_identifier(const char *id) {
-    if (strcmp(id, "boolean") == 0) { emit_simple("BOOL"); return; }
-    if (strcmp(id, "class") == 0) { emit_simple("CLASS"); return; }
-    if (strcmp(id, "double") == 0) { emit_simple("DOUBLE"); return; }
-    if (strcmp(id, "else") == 0) { emit_simple("ELSE"); return; }
-    if (strcmp(id, "if") == 0) { emit_simple("IF"); return; }
-    if (strcmp(id, "int") == 0) { emit_simple("INT"); return; }
-    if (strcmp(id, "public") == 0) { emit_simple("PUBLIC"); return; }
-    if (strcmp(id, "return") == 0) { emit_simple("RETURN"); return; }
-    if (strcmp(id, "static") == 0) { emit_simple("STATIC"); return; }
-    if (strcmp(id, "String") == 0) { emit_simple("STRING"); return; }
-    if (strcmp(id, "void") == 0) { emit_simple("VOID"); return; }
-    if (strcmp(id, "while") == 0) { emit_simple("WHILE"); return; }
-    if (strcmp(id, "true") == 0 || strcmp(id, "false") == 0) { emit_value("BOOLLIT", id); return; }
+static int classify_identifier(const char *id) {
+    if (strcmp(id, "boolean") == 0) { emit_simple("BOOL"); return BOOL; }
+    if (strcmp(id, "class") == 0) { emit_simple("CLASS"); return CLASS; }
+    if (strcmp(id, "double") == 0) { emit_simple("DOUBLE"); return DOUBLE; }
+    if (strcmp(id, "else") == 0) { emit_simple("ELSE"); return ELSE; }
+    if (strcmp(id, "if") == 0) { emit_simple("IF"); return IF; }
+    if (strcmp(id, "int") == 0) { emit_simple("INT"); return INT; }
+    if (strcmp(id, "public") == 0) { emit_simple("PUBLIC"); return PUBLIC; }
+    if (strcmp(id, "return") == 0) { emit_simple("RETURN"); return RETURN; }
+    if (strcmp(id, "static") == 0) { emit_simple("STATIC"); return STATIC; }
+    if (strcmp(id, "String") == 0) { emit_simple("STRING"); return STRING; }
+    if (strcmp(id, "void") == 0) { emit_simple("VOID"); return VOID; }
+    if (strcmp(id, "while") == 0) { emit_simple("WHILE"); return WHILE; }
+    
+    if (strcmp(id, "true") == 0 || strcmp(id, "false") == 0) { 
+        emit_value("BOOLLIT", id); 
+        yylval.str = strdup(id); 
+        return BOOLLIT; 
+    }
 
     if (
         strcmp(id, "abstract") == 0 || strcmp(id, "assert") == 0 || strcmp(id, "break") == 0 ||
@@ -98,16 +123,24 @@ static void classify_identifier(const char *id) {
         strcmp(id, "Integer") == 0 || strcmp(id, "System") == 0 || strcmp(id, "null") == 0
     ) {
         emit_value("RESERVED", id);
-        return;
+        yylval.str = strdup(id);
+        return RESERVED;
     }
 
     emit_value("IDENTIFIER", id);
+    yylval.str = strdup(id);
+    return IDENTIFIER;
 }
 
 #define YY_USER_ACTION do { \
+    yylloc.first_line = current_line; \
+    yylloc.first_column = current_col; \
+    yylloc.last_line = current_line; \
+    yylloc.last_column = current_col + yyleng - 1; \
     token_line = current_line; \
     token_col = current_col; \
     advance_position(yytext); \
+    current_error_yytext = yytext; \
 } while (0);
 %}
 
@@ -122,113 +155,141 @@ DECIMAL              {NUMSEQ}\.{NUMSEQ}?({EXPONENT})?|\.{NUMSEQ}({EXPONENT})?|{N
 WHITE_SPACE          [ \t\f\r\n]+
 
 %x COMMENT
-%x STRING
+%x STR_STATE
 
 %%
 
-"System.out.print"      { emit_simple("PRINT"); }
-"Integer.parseInt"      { emit_simple("PARSEINT"); }
-".length"               { emit_simple("DOTLENGTH"); }
+"System.out.print" { emit_simple("PRINT"); return PRINT; }
+"Integer.parseInt" { emit_simple("PARSEINT"); return PARSEINT; }
+".length"          { emit_simple("DOTLENGTH"); return DOTLENGTH; }
 
-"->"                    { emit_simple("ARROW"); }
-"<<"                    { emit_simple("LSHIFT"); }
-">>"                    { emit_simple("RSHIFT"); }
-"&&"                    { emit_simple("AND"); }
-"||"                    { emit_simple("OR"); }
-"=="                    { emit_simple("EQ"); }
-"!="                    { emit_simple("NE"); }
-">="                    { emit_simple("GE"); }
-"<="                    { emit_simple("LE"); }
-"++"                    { emit_value("RESERVED", yytext); }
-"--"                    { emit_value("RESERVED", yytext); }
+"->"  { emit_simple("ARROW"); return ARROW; }
+"<<"  { emit_simple("LSHIFT"); return LSHIFT; }
+">>"  { emit_simple("RSHIFT"); return RSHIFT; }
+"&&"  { emit_simple("AND"); return AND; }
+"||"  { emit_simple("OR"); return OR; }
+"=="  { emit_simple("EQ"); return EQ; }
+"!="  { emit_simple("NE"); return NE; }
+">="  { emit_simple("GE"); return GE; }
+"<="  { emit_simple("LE"); return LE; }
+"++"  { emit_value("RESERVED", yytext); yylval.str = strdup(yytext); return RESERVED; }
+"--"  { emit_value("RESERVED", yytext); yylval.str = strdup(yytext); return RESERVED; }
 
-"="                     { emit_simple("ASSIGN"); }
-"*"                     { emit_simple("STAR"); }
-","                     { emit_simple("COMMA"); }
-"/"                     { emit_simple("DIV"); }
-">"                     { emit_simple("GT"); }
-"{"                     { emit_simple("LBRACE"); }
-"("                     { emit_simple("LPAR"); }
-"["                     { emit_simple("LSQ"); }
-"<"                     { emit_simple("LT"); }
-"-"                     { emit_simple("MINUS"); }
-"%"                     { emit_simple("MOD"); }
-"!"                     { emit_simple("NOT"); }
-"+"                     { emit_simple("PLUS"); }
-"}"                     { emit_simple("RBRACE"); }
-")"                     { emit_simple("RPAR"); }
-"]"                     { emit_simple("RSQ"); }
-";"                     { emit_simple("SEMICOLON"); }
-"^"                     { emit_simple("XOR"); }
+"=" { emit_simple("ASSIGN"); return ASSIGN; }
+"*" { emit_simple("STAR"); return STAR; }
+"," { emit_simple("COMMA"); return COMMA; }
+"/" { emit_simple("DIV"); return DIV; }
+">" { emit_simple("GT"); return GT; }
+"{" { emit_simple("LBRACE"); return LBRACE; }
+"(" { emit_simple("LPAR"); return LPAR; }
+"[" { emit_simple("LSQ"); return LSQ; }
+"<" { emit_simple("LT"); return LT; }
+"-" { emit_simple("MINUS"); return MINUS; }
+"%" { emit_simple("MOD"); return MOD; }
+"!" { emit_simple("NOT"); return NOT; }
+"+" { emit_simple("PLUS"); return PLUS; }
+"}" { emit_simple("RBRACE"); return RBRACE; }
+")" { emit_simple("RPAR"); return RPAR; }
+"]" { emit_simple("RSQ"); return RSQ; }
+";" { emit_simple("SEMICOLON"); return SEMICOLON; }
+"^" { emit_simple("XOR"); return XOR; }
 
-{DECIMAL}               { emit_value("DECIMAL", yytext); }
-{NATURAL}               { emit_value("NATURAL", yytext); }
+{DECIMAL} { 
+    emit_value("DECIMAL", yytext); 
+    yylval.str = strdup(yytext); 
+    return DECIMAL; 
+}
+{NATURAL} { 
+    emit_value("NATURAL", yytext); 
+    yylval.str = strdup(yytext); 
+    return NATURAL; 
+}
 
 "\"" {
     string_start_line = token_line;
     string_start_col = token_col;
     string_pos = 0;
     string_has_error = false;
-    BEGIN(STRING);
+    BEGIN(STR_STATE);
 }
 
-<STRING>[^\\"\n\r]+      { append_to_string(yytext); }
-<STRING>\\[fnrt\\\"]     { append_to_string(yytext); }
-<STRING>\\\r\n|\\\n|\\\r {
+<STR_STATE>[^\\"\n\r]+      { append_to_string(yytext); }
+<STR_STATE>\\[fnrt\\\"]     { append_to_string(yytext); }
+<STR_STATE>\\\r\n|\\\n|\\\r {
     print_invalid_escape_text("\\");
     string_has_error = true;
     print_unterminated_string();
     BEGIN(INITIAL);
 }
-<STRING>\\[^fnrt\\\"\n\r] {printf("Line %d, col %d: invalid escape sequence (%s)\n", token_line, token_col, yytext); string_has_error = true; }
-<STRING>\\ {
+<STR_STATE>\\[^fnrt\\\"\n\r] { printf("Line %d, col %d: invalid escape sequence (%s)\n", token_line, token_col, yytext); string_has_error = true; }
+<STR_STATE>\\ {
     print_invalid_escape_text("\\");
     string_has_error = true;
 }
-<STRING>\" {
+<STR_STATE>\" {
     string_buffer[string_pos] = '\0';
-    if (!string_has_error && emit_tokens) {
-        printf("STRLIT(\"%s\")\n", string_buffer);
+    BEGIN(INITIAL);
+    if (!string_has_error) {
+        char *str_with_quotes = (char *)malloc(string_pos + 3);
+        sprintf(str_with_quotes, "\"%s\"", string_buffer);
+        
+        if (emit_tokens) { 
+            printf("STRLIT(%s)\n", str_with_quotes); 
+        }
+        
+        /* A AST e o erro de sintaxe precisam das aspas */
+        yylval.str = str_with_quotes; 
+        current_error_yytext = yylval.str;
+
+        yylloc.first_line = string_start_line;
+        yylloc.first_column = string_start_col;
+        yylloc.last_line = string_start_line;
+        yylloc.last_column = string_start_col;
+
+        token_line = string_start_line;
+        token_col = string_start_col;
+        return STRLIT; 
     }
-    BEGIN(INITIAL);
 }
-<STRING>\r\n|\n|\r {
+<STR_STATE>\r\n|\n|\r {
     print_unterminated_string();
     BEGIN(INITIAL);
 }
-<STRING><<EOF>> {
+<STR_STATE><<EOF>> {
     print_unterminated_string();
+    token_line = current_line;
+    token_col = current_col;
+    current_error_yytext = "";
     return 0;
 }
 
-"//"[^\r\n]*              { }
+"//"[^\r\n]* { }
 "/*" {
     comment_start_line = token_line;
     comment_start_col = token_col;
     BEGIN(COMMENT);
 }
-<COMMENT>"*/"             { BEGIN(INITIAL); }
-<COMMENT>\r\n|\n|\r       { }
-<COMMENT>.                { }
+<COMMENT>"*/"       { BEGIN(INITIAL); }
+<COMMENT>\r\n|\n|\r { }
+<COMMENT>.          { }
 <COMMENT><<EOF>> {
     printf("Line %d, col %d: unterminated comment\n", comment_start_line, comment_start_col);
+    token_line = current_line;
+    token_col = current_col;
+    current_error_yytext = "";
     return 0;
 }
 
-{WHITE_SPACE}             { }
-{IDENTIFIER}              { classify_identifier(yytext); }
+{WHITE_SPACE} { }
+{IDENTIFIER}  { return classify_identifier(yytext); }
 
-.                         { printf("Line %d, col %d: illegal character (%s)\n", token_line, token_col, yytext); }
+. { printf("Line %d, col %d: illegal character (%s)\n", token_line, token_col, yytext); }
+
+<INITIAL><<EOF>> {
+    token_line = current_line;
+    token_col = current_col;
+    current_error_yytext = ""; /* Garante que o yyerror imprime limpo no EOF */
+    return 0;
+}
 
 %%
-
-int main(int argc, char **argv) {
-    if (argc > 1 && strcmp(argv[1], "-l") == 0) {
-        emit_tokens = true;
-    } else {
-        emit_tokens = false;
-    }
-
-    yylex();
-    return 0;
-}

@@ -1,0 +1,28 @@
+2a3,4
+> Line 9, col 8: Incompatible type undef in if statement
+> Line 10, col 12: Incompatible type int in if statement
+3a6
+> Line 12, col 16: Incompatible type undef in if statement
+5a9
+> Line 15, col 20: Incompatible type undef in if statement
+8,11d11
+< Line 15, col 20: Incompatible type undef in if statement
+< Line 12, col 16: Incompatible type undef in if statement
+< Line 10, col 12: Incompatible type int in if statement
+< Line 9, col 8: Incompatible type undef in if statement
+15a16
+> Line 23, col 11: Incompatible type undef in while statement
+16a18
+> Line 24, col 16: Incompatible type undef in while statement
+17a20
+> Line 25, col 20: Incompatible type undef in while statement
+18a22
+> Line 26, col 24: Incompatible type undef in while statement
+19a24
+> Line 27, col 28: Incompatible type undef in while statement
+22,26d26
+< Line 27, col 28: Incompatible type undef in while statement
+< Line 26, col 24: Incompatible type undef in while statement
+< Line 25, col 20: Incompatible type undef in while statement
+< Line 24, col 16: Incompatible type undef in while statement
+< Line 23, col 11: Incompatible type undef in while statement

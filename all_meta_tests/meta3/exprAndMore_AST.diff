@@ -1,0 +1,30 @@
+9d8
+< Line 6, col 9: Operator = cannot be applied to types undef, undef
+136a136
+> Line 20, col 8: Incompatible type undef in if statement
+137a138
+> Line 21, col 12: Incompatible type undef in if statement
+138a140
+> Line 22, col 16: Incompatible type undef in if statement
+139a142
+> Line 23, col 20: Incompatible type undef in if statement
+140a144
+> Line 24, col 24: Incompatible type undef in if statement
+141a146
+> Line 25, col 28: Incompatible type undef in if statement
+142a148
+> Line 26, col 32: Incompatible type undef in if statement
+143a150
+> Line 27, col 36: Incompatible type undef in if statement
+144a152
+> Line 28, col 40: Incompatible type undef in if statement
+147,155d154
+< Line 28, col 40: Incompatible type undef in if statement
+< Line 27, col 36: Incompatible type undef in if statement
+< Line 26, col 32: Incompatible type undef in if statement
+< Line 25, col 28: Incompatible type undef in if statement
+< Line 24, col 24: Incompatible type undef in if statement
+< Line 23, col 20: Incompatible type undef in if statement
+< Line 22, col 16: Incompatible type undef in if statement
+< Line 21, col 12: Incompatible type undef in if statement
+< Line 20, col 8: Incompatible type undef in if statement

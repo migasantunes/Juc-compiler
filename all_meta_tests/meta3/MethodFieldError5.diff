@@ -1,0 +1,4 @@
+2c2
+< Line 10, col 2: syntax error: 
+---
+> Line 10, col 1: syntax error: }

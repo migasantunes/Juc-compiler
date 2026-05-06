@@ -1,0 +1,4 @@
+3c3
+< Line 5, col 42: syntax error: ,
+---
+> Line 5, col 43: syntax error: )

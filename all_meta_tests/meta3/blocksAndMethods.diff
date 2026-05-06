@@ -1,0 +1,8 @@
+1d0
+< Line 4, col 20: Operator >> cannot be applied to types double, double
+2a2
+> Line 4, col 20: Operator >> cannot be applied to types double, double
+7a8
+> Line 15, col 9: Incompatible type undef in if statement
+10d10
+< Line 15, col 9: Incompatible type undef in if statement
