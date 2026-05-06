@@ -13,12 +13,14 @@ extern int token_line;
 extern int token_col;
 extern char *current_error_yytext;
 extern bool emit_tokens;
+extern bool lexical_error_found;
 
 bool syntax_error_found = false;
 bool semantic_error_found = false;
 
 #include "ast.h"
 #include "semantics.h"
+#include "codegen.h"
 
 %}
 
@@ -41,7 +43,7 @@ bool semantic_error_found = false;
 
 %type <node> Program DeclList MethodDecl FieldDecl AuxIdList
 %type <node> Type MethodHeader FormalParams MethodBody MethodBodyDecls
-%type <node> VarDecl StatementList Statement Expr MethodInvocation ExprList Assignment ParseArgs
+%type <node> VarDecl StatementList Statement Expr OrExpr AndExpr XorExpr EqExpr RelExpr ShiftExpr AddExpr MulExpr UnaryExpr Primary MethodInvocation ExprList ParseArgs
 
 %nonassoc LOWER_THAN_ELSE
 %nonassoc ELSE
@@ -134,6 +136,18 @@ MethodHeader: Type IDENTIFIER LPAR RPAR
                 add_child($$, new_node_at("Identifier", $2, @2.first_line, @2.first_column));
                 add_child($$, new_node("MethodParams", NULL));
             }
+            | Type IDENTIFIER LPAR STRING LSQ RSQ IDENTIFIER RPAR
+            {
+                $$ = new_node("MethodHeader", NULL);
+                add_child($$, $1);
+                add_child($$, new_node_at("Identifier", $2, @2.first_line, @2.first_column));
+                Node *params = new_node("MethodParams", NULL);
+                Node *param = new_node("ParamDecl", NULL);
+                add_child(param, new_node_at("StringArray", NULL, @4.first_line, @4.first_column));
+                add_child(param, new_node_at("Identifier", $7, @7.first_line, @7.first_column));
+                add_child(params, param);
+                add_child($$, params);
+            }
             | Type IDENTIFIER LPAR FormalParams RPAR
             {
                 $$ = new_node("MethodHeader", NULL);
@@ -149,6 +163,18 @@ MethodHeader: Type IDENTIFIER LPAR RPAR
                 add_child($$, new_node_at("Void", NULL, @1.first_line, @1.first_column));
                 add_child($$, new_node_at("Identifier", $2, @2.first_line, @2.first_column));
                 add_child($$, new_node("MethodParams", NULL));
+            }
+            | VOID IDENTIFIER LPAR STRING LSQ RSQ IDENTIFIER RPAR
+            {
+                $$ = new_node("MethodHeader", NULL);
+                add_child($$, new_node_at("Void", NULL, @1.first_line, @1.first_column));
+                add_child($$, new_node_at("Identifier", $2, @2.first_line, @2.first_column));
+                Node *params = new_node("MethodParams", NULL);
+                Node *param = new_node("ParamDecl", NULL);
+                add_child(param, new_node_at("StringArray", NULL, @4.first_line, @4.first_column));
+                add_child(param, new_node_at("Identifier", $7, @7.first_line, @7.first_column));
+                add_child(params, param);
+                add_child($$, params);
             }
             | VOID IDENTIFIER LPAR FormalParams RPAR
             {
@@ -174,12 +200,6 @@ FormalParams: Type IDENTIFIER
                 add_child(new_param, new_node_at("Identifier", $4, @4.first_line, @4.first_column));
                 add_sibling($1, new_param);
                 $$ = $1;
-            }
-            | STRING LSQ RSQ IDENTIFIER
-            {
-                $$ = new_node("ParamDecl", NULL);
-                add_child($$, new_node_at("StringArray", NULL, @1.first_line, @1.first_column));
-                add_child($$, new_node_at("Identifier", $4, @4.first_line, @4.first_column));
             }
             ;
 
@@ -232,6 +252,11 @@ StatementList: /* Vazio */ { $$ = NULL; }
                  if ($1 == NULL) { $$ = $2; }
                  else { add_sibling($1, $2); $$ = $1; }
              }
+             | StatementList VarDecl
+             {
+                 if ($1 == NULL) { $$ = $2; }
+                 else { add_sibling($1, $2); $$ = $1; }
+             }
              ;
 
 Statement: LBRACE StatementList RBRACE 
@@ -266,7 +291,8 @@ Statement: LBRACE StatementList RBRACE
          | RETURN SEMICOLON { $$ = new_node_at("Return", NULL, @1.first_line, @1.first_column); }
          | RETURN Expr SEMICOLON { $$ = new_node_at("Return", NULL, @1.first_line, @1.first_column); add_child($$, $2); }
          | MethodInvocation SEMICOLON { $$ = $1; }
-         | Assignment SEMICOLON { $$ = $1; }
+         | IDENTIFIER ASSIGN Expr SEMICOLON
+         { $$ = new_node_at("Assign", NULL, @2.first_line, @2.first_column); add_child($$, new_node_at("Identifier", $1, @1.first_line, @1.first_column)); add_child($$, $3); }
          | ParseArgs SEMICOLON { $$ = $1; }
          | SEMICOLON { $$ = NULL; }
          | PRINT LPAR Expr RPAR SEMICOLON { $$ = new_node_at("Print", NULL, @1.first_line, @1.first_column); add_child($$, $3); }
@@ -274,36 +300,67 @@ Statement: LBRACE StatementList RBRACE
          | error SEMICOLON { $$ = NULL; }
          ;
 
-Expr: Expr PLUS Expr { $$ = new_node_at("Add", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
-    | Expr MINUS Expr { $$ = new_node_at("Sub", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
-    | Expr STAR Expr { $$ = new_node_at("Mul", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
-    | Expr DIV Expr { $$ = new_node_at("Div", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
-    | Expr MOD Expr { $$ = new_node_at("Mod", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
-    | Expr AND Expr { $$ = new_node_at("And", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
-    | Expr OR Expr { $$ = new_node_at("Or", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
-    | Expr XOR Expr { $$ = new_node_at("Xor", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
-    | Expr LSHIFT Expr { $$ = new_node_at("Lshift", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
-    | Expr RSHIFT Expr { $$ = new_node_at("Rshift", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
-    | Expr EQ Expr { $$ = new_node_at("Eq", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
-    | Expr GE Expr { $$ = new_node_at("Ge", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
-    | Expr GT Expr { $$ = new_node_at("Gt", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
-    | Expr LE Expr { $$ = new_node_at("Le", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
-    | Expr LT Expr { $$ = new_node_at("Lt", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
-    | Expr NE Expr { $$ = new_node_at("Ne", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
-    | MINUS Expr %prec UNARY_MINUS { $$ = new_node_at("Minus", NULL, @1.first_line, @1.first_column); add_child($$, $2); }
-    | PLUS Expr %prec UNARY_PLUS { $$ = new_node_at("Plus", NULL, @1.first_line, @1.first_column); add_child($$, $2); }
-    | NOT Expr { $$ = new_node_at("Not", NULL, @1.first_line, @1.first_column); add_child($$, $2); }
-    | Assignment { $$ = $1; }
-    | MethodInvocation { $$ = $1; }
-    | ParseArgs { $$ = $1; }
-    | IDENTIFIER { $$ = new_node_at("Identifier", $1, @1.first_line, @1.first_column); }
-    | IDENTIFIER DOTLENGTH { $$ = new_node_at("Length", NULL, @2.first_line, @2.first_column); add_child($$, new_node_at("Identifier", $1, @1.first_line, @1.first_column)); }
-    | NATURAL { $$ = new_node_at("Natural", $1, @1.first_line, @1.first_column); }
-    | DECIMAL { $$ = new_node_at("Decimal", $1, @1.first_line, @1.first_column); }
-    | BOOLLIT { $$ = new_node_at("BoolLit", $1, @1.first_line, @1.first_column); }
-    | LPAR Expr RPAR { $$ = $2; }
-    | LPAR error RPAR { $$ = NULL; }
+Expr: IDENTIFIER ASSIGN Expr
+    { $$ = new_node_at("Assign", NULL, @2.first_line, @2.first_column); add_child($$, new_node_at("Identifier", $1, @1.first_line, @1.first_column)); add_child($$, $3); }
+    | OrExpr { $$ = $1; }
     ;
+
+OrExpr: OrExpr OR AndExpr { $$ = new_node_at("Or", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
+      | AndExpr { $$ = $1; }
+      ;
+
+AndExpr: AndExpr AND XorExpr { $$ = new_node_at("And", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
+       | XorExpr { $$ = $1; }
+       ;
+
+XorExpr: XorExpr XOR EqExpr { $$ = new_node_at("Xor", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
+       | EqExpr { $$ = $1; }
+       ;
+
+EqExpr: EqExpr EQ RelExpr { $$ = new_node_at("Eq", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
+      | EqExpr NE RelExpr { $$ = new_node_at("Ne", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
+      | RelExpr { $$ = $1; }
+      ;
+
+RelExpr: RelExpr GE ShiftExpr { $$ = new_node_at("Ge", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
+       | RelExpr GT ShiftExpr { $$ = new_node_at("Gt", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
+       | RelExpr LE ShiftExpr { $$ = new_node_at("Le", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
+       | RelExpr LT ShiftExpr { $$ = new_node_at("Lt", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
+       | ShiftExpr { $$ = $1; }
+       ;
+
+ShiftExpr: ShiftExpr LSHIFT AddExpr { $$ = new_node_at("Lshift", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
+         | ShiftExpr RSHIFT AddExpr { $$ = new_node_at("Rshift", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
+         | AddExpr { $$ = $1; }
+         ;
+
+AddExpr: AddExpr PLUS MulExpr { $$ = new_node_at("Add", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
+       | AddExpr MINUS MulExpr { $$ = new_node_at("Sub", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
+       | MulExpr { $$ = $1; }
+       ;
+
+MulExpr: MulExpr STAR UnaryExpr { $$ = new_node_at("Mul", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
+       | MulExpr DIV UnaryExpr { $$ = new_node_at("Div", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
+       | MulExpr MOD UnaryExpr { $$ = new_node_at("Mod", NULL, @2.first_line, @2.first_column); add_child($$, $1); add_child($$, $3); }
+       | UnaryExpr { $$ = $1; }
+       ;
+
+UnaryExpr: MINUS UnaryExpr %prec UNARY_MINUS { $$ = new_node_at("Minus", NULL, @1.first_line, @1.first_column); add_child($$, $2); }
+         | PLUS UnaryExpr %prec UNARY_PLUS { $$ = new_node_at("Plus", NULL, @1.first_line, @1.first_column); add_child($$, $2); }
+         | NOT UnaryExpr { $$ = new_node_at("Not", NULL, @1.first_line, @1.first_column); add_child($$, $2); }
+         | Primary { $$ = $1; }
+         ;
+
+Primary: MethodInvocation { $$ = $1; }
+       | ParseArgs { $$ = $1; }
+       | IDENTIFIER DOTLENGTH { $$ = new_node_at("Length", NULL, @2.first_line, @2.first_column); add_child($$, new_node_at("Identifier", $1, @1.first_line, @1.first_column)); }
+       | IDENTIFIER { $$ = new_node_at("Identifier", $1, @1.first_line, @1.first_column); }
+       | NATURAL { $$ = new_node_at("Natural", $1, @1.first_line, @1.first_column); }
+       | DECIMAL { $$ = new_node_at("Decimal", $1, @1.first_line, @1.first_column); }
+       | BOOLLIT { $$ = new_node_at("BoolLit", $1, @1.first_line, @1.first_column); }
+       | LPAR Expr RPAR { $$ = $2; }
+       | LPAR error RPAR { $$ = NULL; }
+       ;
 
 MethodInvocation: IDENTIFIER LPAR RPAR 
                 { $$ = new_node_at("Call", NULL, @1.first_line, @1.first_column); add_child($$, new_node_at("Identifier", $1, @1.first_line, @1.first_column)); }
@@ -315,10 +372,6 @@ MethodInvocation: IDENTIFIER LPAR RPAR
 ExprList: Expr { $$ = $1; }
         | ExprList COMMA Expr { add_sibling($1, $3); $$ = $1; }
         ;
-
-Assignment: IDENTIFIER ASSIGN Expr 
-          { $$ = new_node_at("Assign", NULL, @2.first_line, @2.first_column); add_child($$, new_node_at("Identifier", $1, @1.first_line, @1.first_column)); add_child($$, $3); }
-          ;
 
 ParseArgs: PARSEINT LPAR IDENTIFIER LSQ Expr RSQ RPAR 
          { $$ = new_node_at("ParseArgs", NULL, @1.first_line, @1.first_column); add_child($$, new_node_at("Identifier", $3, @3.first_line, @3.first_column)); add_child($$, $5); }
@@ -340,6 +393,8 @@ int main(int argc, char **argv) {
     bool print_ast = false;
     bool run_semantic = true;
     bool print_semantic = false;
+    bool errors_only_semantic = false;
+    bool emit_llvm = false;
     
     if (argc > 1) {
         if (strcmp(argv[1], "-1") == 0 || strcmp(argv[1], "-l") == 0) {
@@ -361,23 +416,34 @@ int main(int argc, char **argv) {
             parse_syntax = true;
             run_semantic = true;
             print_semantic = true;
+        } else if (strcmp(argv[1], "-e3") == 0) {
+            parse_syntax = true;
+            run_semantic = true;
+            errors_only_semantic = true;
         }
+    } else {
+        emit_llvm = true;
     }
     
     if (parse_syntax) {
         yyparse();
         if (!syntax_error_found && program_root != NULL) {
-            if (run_semantic) {
+            if (run_semantic && !(errors_only_semantic && lexical_error_found)) {
                 build_symbol_tables(program_root);
                 annotate_program(program_root);
                 if (print_semantic) {
                     print_symbol_tables();
                     printf("\n");
                     print_tree_annotated(program_root, 0);
+                } else if (errors_only_semantic) {
+                    /* errors already printed during analysis */
                 }
             }
             if (print_ast) {
                 print_tree(program_root, 0); 
+            }
+            if (emit_llvm && run_semantic && !lexical_error_found && !semantic_error_found) {
+                codegen_program(program_root, stdout);
             }
         }
         free_symbol_tables();

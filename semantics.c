@@ -4,6 +4,7 @@
 #include <string.h>
 #include <limits.h>
 #include <errno.h>
+#include <math.h>
 
 SymTable *class_table = NULL;
 MethodInfo *method_list = NULL;
@@ -30,6 +31,7 @@ static bool is_boolean(TypeKind type) {
 }
 
 static bool is_assign_compatible(TypeKind dest, TypeKind src) {
+    if (dest == TYPE_UNDEF || src == TYPE_UNDEF) return false;
     if (dest == TYPE_STRING_ARRAY || src == TYPE_STRING_ARRAY) return false;
     if (dest == TYPE_VOID || src == TYPE_VOID) return false;
     if (dest == src) return true;
@@ -298,7 +300,6 @@ void build_symbol_tables(Node *program) {
             }
         } else if (child->type != NULL && strcmp(child->type, "MethodDecl") == 0) {
             Node *header = child->child;
-            Node *body = header ? header->sibling : NULL;
             Node *ret_node = header ? header->child : NULL;
             Node *id_node = ret_node ? ret_node->sibling : NULL;
             Node *params_node = id_node ? id_node->sibling : NULL;
@@ -307,10 +308,42 @@ void build_symbol_tables(Node *program) {
             TypeKind ret_type = type_from_node(ret_node);
             ParamType *params = build_param_types(params_node);
             bool reserved = is_reserved_identifier(id_node->value);
-            if (reserved) report_symbol_reserved(id_node);
-
             bool duplicate = method_signature_exists(id_node->value, params);
-            if (duplicate && !reserved) {
+
+            /* Even for invalid (reserved/duplicate) methods, parameter errors must still be reported. */
+            {
+                Node *param = params_node ? params_node->child : NULL;
+                while (param != NULL) {
+                    Node *t_node = param->child;
+                    Node *i_node = t_node ? t_node->sibling : NULL;
+                    if (i_node != NULL) {
+                        if (is_reserved_identifier(i_node->value)) {
+                            report_symbol_reserved(i_node);
+                        } else {
+                            /* Look for duplicates among previous params in this header. */
+                            Node *prev = params_node ? params_node->child : NULL;
+                            bool seen = false;
+                            while (prev != NULL && prev != param) {
+                                Node *pt = prev->child;
+                                Node *pi = pt ? pt->sibling : NULL;
+                                if (pi != NULL && pi->value != NULL && strcmp(pi->value, i_node->value) == 0) {
+                                    seen = true;
+                                    break;
+                                }
+                                prev = prev->sibling;
+                            }
+                            if (seen) {
+                                report_symbol_already_defined(i_node);
+                            }
+                        }
+                    }
+                    param = param->sibling;
+                }
+            }
+
+            if (reserved) {
+                report_symbol_reserved(id_node);
+            } else if (duplicate) {
                 semantic_error_found = true;
                 char *sig = format_params_annot(params);
                 printf("Line %d, col %d: Symbol %s%s already defined\n", id_node->line, id_node->col, id_node->value, sig);
@@ -328,25 +361,12 @@ void build_symbol_tables(Node *program) {
                     Node *i_node = t_node ? t_node->sibling : NULL;
                     if (i_node) {
                         TypeKind type = type_from_node(t_node);
-                        if (is_reserved_identifier(i_node->value)) report_symbol_reserved(i_node);
-                        else if (find_variable_symbol(info->table, i_node->value) != NULL) report_symbol_already_defined(i_node);
-                        else append_symbol(info->table, create_symbol(i_node->value, type, true, false, NULL, i_node));
-                    }
-                    param = param->sibling;
-                }
-                Node *stmt = body ? body->child : NULL;
-                while (stmt != NULL) {
-                    if (stmt->type != NULL && strcmp(stmt->type, "VarDecl") == 0) {
-                        Node *t_node = stmt->child;
-                        Node *i_node = t_node ? t_node->sibling : NULL;
-                        if (i_node) {
-                            TypeKind type = type_from_node(t_node);
-                            if (is_reserved_identifier(i_node->value)) report_symbol_reserved(i_node);
-                            else if (find_variable_symbol(info->table, i_node->value) != NULL) report_symbol_already_defined(i_node);
-                            else append_symbol(info->table, create_symbol(i_node->value, type, false, false, NULL, i_node));
+                        /* Param errors were already reported above; don't duplicate them here. */
+                        if (!is_reserved_identifier(i_node->value) && find_variable_symbol(info->table, i_node->value) == NULL) {
+                            append_symbol(info->table, create_symbol(i_node->value, type, true, false, NULL, i_node));
                         }
                     }
-                    stmt = stmt->sibling;
+                    param = param->sibling;
                 }
             } else {
                 free_param_types(params);
@@ -507,6 +527,13 @@ static TypeKind analyze_expr(Node *node, SymTable *method_table) {
     }
 
     if (strcmp(node->type, "Decimal") == 0) {
+        char *clean = strip_underscores(node->value);
+        errno = 0;
+        double d = strtod(clean, NULL);
+        free(clean);
+        if (errno == ERANGE && (d == 0.0 || isinf(d))) {
+            report_number_out_of_bounds(node);
+        }
         annotate_node(node, type_to_str(TYPE_DOUBLE));
         return TYPE_DOUBLE;
     }
@@ -540,7 +567,7 @@ static TypeKind analyze_expr(Node *node, SymTable *method_table) {
     if (strcmp(node->type, "Length") == 0) {
         Node *id_node = node->child;
         TypeKind id_type = analyze_expr(id_node, method_table);
-        if (id_type != TYPE_STRING_ARRAY && id_type != TYPE_UNDEF) {
+        if (id_type != TYPE_STRING_ARRAY) {
             report_operator_type(node, ".length", id_type);
         }
         annotate_node(node, type_to_str(TYPE_INT));
@@ -651,11 +678,17 @@ static TypeKind analyze_expr(Node *node, SymTable *method_table) {
         Node *right_node = left_node ? left_node->sibling : NULL;
         TypeKind left = analyze_expr(left_node, method_table);
         TypeKind right = analyze_expr(right_node, method_table);
-        if (left != TYPE_INT || right != TYPE_INT) {
-            report_operator_types(node, "^", left, right);
+        if (left == TYPE_INT && right == TYPE_INT) {
+            annotate_node(node, type_to_str(TYPE_INT));
+            return TYPE_INT;
         }
-        annotate_node(node, type_to_str(TYPE_INT));
-        return TYPE_INT;
+        if (left == TYPE_BOOL && right == TYPE_BOOL) {
+            annotate_node(node, type_to_str(TYPE_BOOL));
+            return TYPE_BOOL;
+        }
+        report_operator_types(node, "^", left, right);
+        annotate_node(node, type_to_str(TYPE_UNDEF));
+        return TYPE_UNDEF;
     }
 
     if (strcmp(node->type, "Lshift") == 0 || strcmp(node->type, "Rshift") == 0) {
@@ -730,6 +763,22 @@ static TypeKind analyze_expr(Node *node, SymTable *method_table) {
 static void analyze_statement(Node *stmt, SymTable *method_table, TypeKind return_type) {
     if (stmt == NULL || stmt->type == NULL) return;
 
+    if (strcmp(stmt->type, "VarDecl") == 0) {
+        Node *t_node = stmt->child;
+        Node *i_node = t_node ? t_node->sibling : NULL;
+        if (i_node != NULL) {
+            TypeKind type = type_from_node(t_node);
+            if (is_reserved_identifier(i_node->value)) {
+                report_symbol_reserved(i_node);
+            } else if (find_variable_symbol(method_table, i_node->value) != NULL) {
+                report_symbol_already_defined(i_node);
+            } else {
+                append_symbol(method_table, create_symbol(i_node->value, type, false, false, NULL, i_node));
+            }
+        }
+        return;
+    }
+
     if (strcmp(stmt->type, "Block") == 0) {
         Node *child = stmt->child;
         while (child != NULL) {
@@ -744,11 +793,11 @@ static void analyze_statement(Node *stmt, SymTable *method_table, TypeKind retur
         Node *then_stmt = cond ? cond->sibling : NULL;
         Node *else_stmt = then_stmt ? then_stmt->sibling : NULL;
         TypeKind cond_type = analyze_expr(cond, method_table);
+        analyze_statement(then_stmt, method_table, return_type);
+        analyze_statement(else_stmt, method_table, return_type);
         if (cond_type != TYPE_BOOL) {
             report_incompatible_in_statement(cond->line, cond->col, cond_type, "if");
         }
-        analyze_statement(then_stmt, method_table, return_type);
-        analyze_statement(else_stmt, method_table, return_type);
         return;
     }
 
@@ -756,10 +805,10 @@ static void analyze_statement(Node *stmt, SymTable *method_table, TypeKind retur
         Node *cond = stmt->child;
         Node *body = cond ? cond->sibling : NULL;
         TypeKind cond_type = analyze_expr(cond, method_table);
+        analyze_statement(body, method_table, return_type);
         if (cond_type != TYPE_BOOL) {
             report_incompatible_in_statement(cond->line, cond->col, cond_type, "while");
         }
-        analyze_statement(body, method_table, return_type);
         return;
     }
 
@@ -801,6 +850,18 @@ static void analyze_method_body(Node *method_body, SymTable *method_table, TypeK
     Node *child = method_body->child;
     while (child != NULL) {
         if (child->type != NULL && strcmp(child->type, "VarDecl") == 0) {
+            Node *t_node = child->child;
+            Node *i_node = t_node ? t_node->sibling : NULL;
+            if (i_node != NULL) {
+                TypeKind type = type_from_node(t_node);
+                if (is_reserved_identifier(i_node->value)) {
+                    report_symbol_reserved(i_node);
+                } else if (find_variable_symbol(method_table, i_node->value) != NULL) {
+                    report_symbol_already_defined(i_node);
+                } else {
+                    append_symbol(method_table, create_symbol(i_node->value, type, false, false, NULL, i_node));
+                }
+            }
             child = child->sibling;
             continue;
         }

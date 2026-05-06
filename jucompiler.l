@@ -13,6 +13,7 @@ int token_line = 1;
 int token_col = 1;
 
 bool emit_tokens = false;
+bool lexical_error_found = false;
 
 static int comment_start_line = 1;
 static int comment_start_col = 1;
@@ -79,10 +80,12 @@ static void emit_value(const char *token_name, const char *value) {
 }
 
 static void print_invalid_escape_text(const char *text) {
+    lexical_error_found = true;
     printf("Line %d, col %d: invalid escape sequence (%s)\n", token_line, token_col, text);
 }
 
 static void print_unterminated_string(void) {
+    lexical_error_found = true;
     printf("Line %d, col %d: unterminated string literal\n", string_start_line, string_start_col);
 }
 
@@ -221,7 +224,7 @@ WHITE_SPACE          [ \t\f\r\n]+
     print_unterminated_string();
     BEGIN(INITIAL);
 }
-<STR_STATE>\\[^fnrt\\\"\n\r] { printf("Line %d, col %d: invalid escape sequence (%s)\n", token_line, token_col, yytext); string_has_error = true; }
+<STR_STATE>\\[^fnrt\\\"\n\r] { lexical_error_found = true; printf("Line %d, col %d: invalid escape sequence (%s)\n", token_line, token_col, yytext); string_has_error = true; }
 <STR_STATE>\\ {
     print_invalid_escape_text("\\");
     string_has_error = true;
@@ -273,6 +276,7 @@ WHITE_SPACE          [ \t\f\r\n]+
 <COMMENT>\r\n|\n|\r { }
 <COMMENT>.          { }
 <COMMENT><<EOF>> {
+    lexical_error_found = true;
     printf("Line %d, col %d: unterminated comment\n", comment_start_line, comment_start_col);
     token_line = current_line;
     token_col = current_col;
@@ -283,7 +287,7 @@ WHITE_SPACE          [ \t\f\r\n]+
 {WHITE_SPACE} { }
 {IDENTIFIER}  { return classify_identifier(yytext); }
 
-. { printf("Line %d, col %d: illegal character (%s)\n", token_line, token_col, yytext); }
+. { lexical_error_found = true; printf("Line %d, col %d: illegal character (%s)\n", token_line, token_col, yytext); }
 
 <INITIAL><<EOF>> {
     token_line = current_line;
