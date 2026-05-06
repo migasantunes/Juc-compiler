@@ -1,5 +1,8 @@
 CC = clang
 CFLAGS = -Wall -Wextra -g
+SDKROOT ?= $(shell xcrun --show-sdk-path 2>/dev/null)
+export CPATH := $(SDKROOT)/usr/include
+export LIBRARY_PATH := $(SDKROOT)/usr/lib
 
 all: jucompiler
 

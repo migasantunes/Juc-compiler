@@ -1,0 +1,5 @@
+Verdadeira main arrancou!
+Falsa main (void)
+Falsa main (int): 42
+Resultado da falsa: 84
+Tudo certo, vou sair mais cedo com um return vazio!

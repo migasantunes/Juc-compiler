@@ -34,6 +34,7 @@ typedef struct {
     StrConst *strings;
     VarSlot *vars; /* function-local map */
     char cur_block[64];
+    bool terminated; /* true if current block already has a terminator */
 } CG;
 
 static const char *llvm_ty(ValTy t) {
@@ -105,13 +106,7 @@ static unsigned char *decode_string_token(const char *tok, size_t *out_len) {
             switch (e) {
                 case 'n': buf[j++] = '\n'; break;
                 case 't': buf[j++] = '\t'; break;
-                case 'r':
-                    /* Meta4 tests are inconsistent: leading \r is preserved, mid-string \r behaves like '\n'. */
-                    {
-                        unsigned char rr = (j == 0) ? '\r' : '\n';
-                        buf[j++] = rr;
-                    }
-                    break;
+                case 'r': buf[j++] = '\r'; break;
                 case 'f': buf[j++] = '\f'; break;
                 case '\\': buf[j++] = '\\'; break;
                 case '"': buf[j++] = '"'; break;
@@ -152,7 +147,6 @@ static char *format_double_const(const char *tok) {
     double d = strtod(clean, NULL);
     free(clean);
     char buf[64];
-    /* LLVM accepts 0x... too, but %.16e matches project printing. */
     snprintf(buf, sizeof(buf), "%.16e", d);
     return strdup(buf);
 }
@@ -387,15 +381,14 @@ static RVal gen_cast(CG *cg, RVal v, ValTy to) {
 static RVal gen_short_circuit(CG *cg, Node *e, bool is_and) {
     /* Produces i1 with proper short-circuit */
     RVal lhs = gen_expr(cg, e->child);
-    char *lhs_reg = lhs.reg;
     if (lhs.ty != VT_I1) lhs = gen_cast(cg, lhs, VT_I1);
 
     char *lbl_rhs = new_label(cg, is_and ? "and.rhs." : "or.rhs.");
     char *lbl_end = new_label(cg, is_and ? "and.end." : "or.end.");
     char pred_lhs[64];
     snprintf(pred_lhs, sizeof(pred_lhs), "%s", cg->cur_block[0] ? cg->cur_block : "entry");
-    if (is_and) cg_emit(cg, "  br i1 %s, label %%%s, label %%%s\n", lhs_reg, lbl_rhs, lbl_end);
-    else        cg_emit(cg, "  br i1 %s, label %%%s, label %%%s\n", lhs_reg, lbl_end, lbl_rhs);
+    if (is_and) cg_emit(cg, "  br i1 %s, label %%%s, label %%%s\n", lhs.reg, lbl_rhs, lbl_end);
+    else        cg_emit(cg, "  br i1 %s, label %%%s, label %%%s\n", lhs.reg, lbl_end, lbl_rhs);
 
     cg_emit(cg, "%s:\n", lbl_rhs);
     cg_set_block(cg, lbl_rhs);
@@ -580,10 +573,14 @@ static RVal gen_expr(CG *cg, Node *e) {
         return make_rval(VT_I32, res);
     }
     if (strcmp(op, "Lshift") == 0 || strcmp(op, "Rshift") == 0) {
+        /* JLS int shifts use only lower 5 bits of rhs; LLVM shifts >= width are invalid/poison. */
+        char *bm = new_reg(cg);
+        cg_emit(cg, "  %s = and i32 %s, 31\n", bm, b.reg);
+        free(b.reg);
         char *res = new_reg(cg);
         const char *ins = strcmp(op, "Lshift") == 0 ? "shl" : "ashr";
-        cg_emit(cg, "  %s = %s i32 %s, %s\n", res, ins, a.reg, b.reg);
-        free(a.reg); free(b.reg);
+        cg_emit(cg, "  %s = %s i32 %s, %s\n", res, ins, a.reg, bm);
+        free(a.reg); free(bm);
         return make_rval(VT_I32, res);
     }
 
@@ -594,9 +591,10 @@ static RVal gen_expr(CG *cg, Node *e) {
         char *res = new_reg(cg);
         bool isdbl = (a.ty == VT_DBL && b.ty == VT_DBL);
         if (isdbl) {
+            /* Use 'une' for != : Java true if unordered (NaN); 'one' would be false for NaN. */
             const char *pred =
                 strcmp(op, "Eq") == 0 ? "oeq" :
-                strcmp(op, "Ne") == 0 ? "one" :
+                strcmp(op, "Ne") == 0 ? "une" :
                 strcmp(op, "Lt") == 0 ? "olt" :
                 strcmp(op, "Le") == 0 ? "ole" :
                 strcmp(op, "Gt") == 0 ? "ogt" : "oge";
@@ -649,15 +647,20 @@ static void gen_print(CG *cg, Node *print_node) {
 
 static void gen_stmt(CG *cg, Node *s, ValTy ret_ty, char **ret_slot_ptr) {
     if (s == NULL || s->type == NULL) return;
+    if (cg->terminated) return; /* block already has a terminator, skip dead code */
 
     if (strcmp(s->type, "Block") == 0) {
-        for (Node *c = s->child; c != NULL; c = c->sibling) gen_stmt(cg, c, ret_ty, ret_slot_ptr);
+        for (Node *c = s->child; c != NULL; c = c->sibling) {
+            if (cg->terminated) break;
+            gen_stmt(cg, c, ret_ty, ret_slot_ptr);
+        }
         return;
     }
     if (strcmp(s->type, "Print") == 0) { gen_print(cg, s); return; }
     if (strcmp(s->type, "Return") == 0) {
         if (ret_ty == VT_VOID) {
             cg_emit(cg, "  ret void\n");
+            cg->terminated = true;
             return;
         }
         Node *e = s->child;
@@ -665,6 +668,7 @@ static void gen_stmt(CG *cg, Node *s, ValTy ret_ty, char **ret_slot_ptr) {
         if (ret_ty == VT_DBL && v.ty == VT_I32) v = gen_cast(cg, v, VT_DBL);
         cg_emit(cg, "  ret %s %s\n", llvm_ty(v.ty), v.reg);
         free(v.reg);
+        cg->terminated = true;
         return;
     }
     if (strcmp(s->type, "If") == 0) {
@@ -678,16 +682,25 @@ static void gen_stmt(CG *cg, Node *s, ValTy ret_ty, char **ret_slot_ptr) {
         char *l_end  = new_label(cg, "if.end.");
         cg_emit(cg, "  br i1 %s, label %%%s, label %%%s\n", c.reg, l_then, l_else);
         free(c.reg);
+
         cg_emit(cg, "%s:\n", l_then);
         cg_set_block(cg, l_then);
+        cg->terminated = false;
         gen_stmt(cg, then_s, ret_ty, ret_slot_ptr);
-        cg_emit(cg, "  br label %%%s\n", l_end);
+        bool then_terminated = cg->terminated;
+        if (!then_terminated) cg_emit(cg, "  br label %%%s\n", l_end);
+
         cg_emit(cg, "%s:\n", l_else);
         cg_set_block(cg, l_else);
+        cg->terminated = false;
         gen_stmt(cg, else_s, ret_ty, ret_slot_ptr);
-        cg_emit(cg, "  br label %%%s\n", l_end);
+        bool else_terminated = cg->terminated;
+        if (!else_terminated) cg_emit(cg, "  br label %%%s\n", l_end);
+
         cg_emit(cg, "%s:\n", l_end);
         cg_set_block(cg, l_end);
+        cg->terminated = (then_terminated && else_terminated);
+        if (cg->terminated) cg_emit(cg, "  unreachable\n");
         free(l_then); free(l_else); free(l_end);
         return;
     }
@@ -700,16 +713,19 @@ static void gen_stmt(CG *cg, Node *s, ValTy ret_ty, char **ret_slot_ptr) {
         cg_emit(cg, "  br label %%%s\n", l_cond);
         cg_emit(cg, "%s:\n", l_cond);
         cg_set_block(cg, l_cond);
+        cg->terminated = false;
         RVal c = gen_expr(cg, cond);
         if (c.ty != VT_I1) c = gen_cast(cg, c, VT_I1);
         cg_emit(cg, "  br i1 %s, label %%%s, label %%%s\n", c.reg, l_body, l_end);
         free(c.reg);
         cg_emit(cg, "%s:\n", l_body);
         cg_set_block(cg, l_body);
+        cg->terminated = false;
         gen_stmt(cg, body, ret_ty, ret_slot_ptr);
-        cg_emit(cg, "  br label %%%s\n", l_cond);
+        if (!cg->terminated) cg_emit(cg, "  br label %%%s\n", l_cond);
         cg_emit(cg, "%s:\n", l_end);
         cg_set_block(cg, l_end);
+        cg->terminated = false;
         free(l_cond); free(l_body); free(l_end);
         return;
     }
@@ -785,15 +801,19 @@ static void gen_method(CG *cg, MethodInfo *m, Node *decl) {
     Node *header = decl ? decl->child : NULL;
     Node *body = header ? header->sibling : NULL;
     Node *child = body ? body->child : NULL;
+    cg->terminated = false;
     while (child != NULL) {
+        if (cg->terminated) break;
         gen_stmt(cg, child, rt, NULL);
         child = child->sibling;
     }
 
-    if (rt == VT_VOID) cg_emit(cg, "  ret void\n");
-    else if (rt == VT_I32) cg_emit(cg, "  ret i32 0\n");
-    else if (rt == VT_DBL) cg_emit(cg, "  ret double 0.0\n");
-    else if (rt == VT_I1) cg_emit(cg, "  ret i1 0\n");
+    if (!cg->terminated) {
+        if (rt == VT_VOID) cg_emit(cg, "  ret void\n");
+        else if (rt == VT_I32) cg_emit(cg, "  ret i32 0\n");
+        else if (rt == VT_DBL) cg_emit(cg, "  ret double 0.0\n");
+        else if (rt == VT_I1) cg_emit(cg, "  ret i1 0\n");
+    }
 
     cg_emit(cg, "}\n\n");
 
