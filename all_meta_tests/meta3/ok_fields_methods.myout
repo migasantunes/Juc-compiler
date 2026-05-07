@@ -80,4 +80,4 @@ Program
 ............Identifier(n) - int
 ............Natural(1) - int
 ........Print
-..........StrLit("zero_or_negative")
+..........StrLit("zero_or_negative") - String

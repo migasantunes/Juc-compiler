@@ -6,7 +6,8 @@ Line 6, col 24: Cannot find symbol d
 Line 6, col 25: Operator + cannot be applied to types undef, int
 Line 6, col 28: Operator * cannot be applied to types undef, int
 Line 6, col 21: Operator + cannot be applied to types int, undef
-Line 7, col 95: Cannot find symbol x
+Line 6, col 9: Operator = cannot be applied to types undef, undef
+Line 7, col 95: Cannot find symbol x()
 Line 7, col 93: Cannot find symbol x(undef)
 Line 7, col 91: Cannot find symbol x(undef)
 Line 7, col 89: Cannot find symbol x(undef)
@@ -71,7 +72,7 @@ Line 10, col 8: Operator = cannot be applied to types int, boolean
 Line 12, col 11: Cannot find symbol x
 Line 12, col 12: Operator = cannot be applied to types undef, int
 Line 12, col 12: Incompatible type undef in while statement
-Line 13, col 96: Cannot find symbol x
+Line 13, col 96: Cannot find symbol x()
 Line 13, col 94: Cannot find symbol x(undef)
 Line 13, col 92: Cannot find symbol x(undef)
 Line 13, col 90: Cannot find symbol x(undef)
@@ -115,7 +116,7 @@ Line 13, col 16: Cannot find symbol x(undef)
 Line 13, col 14: Cannot find symbol x(undef)
 Line 13, col 12: Cannot find symbol x(undef)
 Line 13, col 5: Cannot find symbol call2(undef)
-Line 14, col 38: Cannot find symbol x
+Line 14, col 38: Cannot find symbol x()
 Line 14, col 36: Cannot find symbol x(undef)
 Line 14, col 34: Cannot find symbol x(undef)
 Line 14, col 32: Cannot find symbol x(undef)
@@ -133,25 +134,25 @@ Line 14, col 12: Incompatible type undef in while statement
 Line 15, col 5: Cannot find symbol i
 Line 15, col 6: Operator = cannot be applied to types undef, int
 Line 20, col 8: Cannot find symbol x
-Line 20, col 8: Incompatible type undef in if statement
 Line 21, col 12: Cannot find symbol x
-Line 21, col 12: Incompatible type undef in if statement
 Line 22, col 16: Cannot find symbol x
-Line 22, col 16: Incompatible type undef in if statement
 Line 23, col 20: Cannot find symbol x
-Line 23, col 20: Incompatible type undef in if statement
 Line 24, col 24: Cannot find symbol x
-Line 24, col 24: Incompatible type undef in if statement
 Line 25, col 28: Cannot find symbol x
-Line 25, col 28: Incompatible type undef in if statement
 Line 26, col 32: Cannot find symbol x
-Line 26, col 32: Incompatible type undef in if statement
 Line 27, col 36: Cannot find symbol x
-Line 27, col 36: Incompatible type undef in if statement
 Line 28, col 40: Cannot find symbol x
-Line 28, col 40: Incompatible type undef in if statement
 Line 29, col 44: Cannot find symbol x
 Line 29, col 44: Incompatible type undef in if statement
+Line 28, col 40: Incompatible type undef in if statement
+Line 27, col 36: Incompatible type undef in if statement
+Line 26, col 32: Incompatible type undef in if statement
+Line 25, col 28: Incompatible type undef in if statement
+Line 24, col 24: Incompatible type undef in if statement
+Line 23, col 20: Incompatible type undef in if statement
+Line 22, col 16: Incompatible type undef in if statement
+Line 21, col 12: Incompatible type undef in if statement
+Line 20, col 8: Incompatible type undef in if statement
 Line 40, col 4: Cannot find symbol x
 Line 40, col 6: Operator = cannot be applied to types undef, boolean
 Line 41, col 22: Cannot find symbol xD

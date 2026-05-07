@@ -3,8 +3,8 @@ Line 9, col 13: Incompatible type undef in if statement
 Line 11, col 13: Cannot find symbol x2
 Line 11, col 13: Incompatible type undef in if statement
 Line 14, col 13: Cannot find symbol x3
-Line 14, col 13: Incompatible type undef in if statement
 Line 19, col 14: Operator = cannot be applied to types boolean, int
+Line 14, col 13: Incompatible type undef in if statement
 Line 21, col 13: Cannot find symbol x4
 Line 21, col 13: Incompatible type undef in if statement
 Line 27, col 14: Operator .length cannot be applied to type int

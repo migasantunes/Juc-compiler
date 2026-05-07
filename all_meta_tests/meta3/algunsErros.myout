@@ -21,7 +21,6 @@ Line 26, col 11: Operator = cannot be applied to types int, undef
 Line 36, col 15: Operator = cannot be applied to types double, boolean
 Line 36, col 11: Operator = cannot be applied to types int, double
 Line 37, col 13: Number 123123122121 out of bounds
-Line 37, col 11: Operator = cannot be applied to types int, undef
 Line 39, col 15: Operator = cannot be applied to types double, boolean
 Line 39, col 11: Operator = cannot be applied to types int, double
 Line 41, col 9: Cannot find symbol factorial(int,int,int)
@@ -197,7 +196,7 @@ Program
 ..........Identifier(b) - boolean
 ......Assign - int
 ........Identifier(i) - int
-........Natural(123123122121) - undef
+........Natural(123123122121) - int
 ......VarDecl
 ........Int
 ........Identifier(x)

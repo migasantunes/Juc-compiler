@@ -1,6 +1,6 @@
 Line 2, col 42: unterminated string literal
 Line 3, col 18: invalid escape sequence (\1)
-Line 3, col 13: Cannot find symbol f
+Line 3, col 13: Cannot find symbol f()
 Line 3, col 11: Operator = cannot be applied to types int, undef
 ===== Class LexErrorWithTree Symbol Table =====
 factorial	(int)	int

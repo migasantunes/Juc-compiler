@@ -1,6 +1,7 @@
 Line 14, col 15: Operator = cannot be applied to types int, double
 Line 17, col 22: Incompatible type double in return statement
 Line 26, col 27: Operator >> cannot be applied to types double, int
+Line 26, col 19: Operator = cannot be applied to types double, undef
 Line 33, col 9: Cannot find symbol tamanho
 Line 33, col 20: Operator .length cannot be applied to type int
 Line 33, col 17: Operator = cannot be applied to types undef, int
@@ -106,7 +107,7 @@ Program
 ............Identifier(preco) - double
 ............Natural(0) - int
 ........Print
-..........StrLit("we out here")
+..........StrLit("we out here") - String
 ........Block
 ..........Assign - double
 ............Identifier(preco) - double
@@ -114,11 +115,11 @@ Program
 ..............Identifier(getNumero) - ()
 ..........Assign - double
 ............Identifier(preco) - double
-............Rshift - int
+............Rshift - undef
 ..............Identifier(preco) - double
 ..............Natural(2) - int
 ..........Print
-............StrLit("dat boi dead")
+............StrLit("dat boi dead") - String
 ......Return
 ........Identifier(vivo) - boolean
 ..MethodDecl

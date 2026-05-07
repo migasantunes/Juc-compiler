@@ -252,11 +252,6 @@ StatementList: /* Vazio */ { $$ = NULL; }
                  if ($1 == NULL) { $$ = $2; }
                  else { add_sibling($1, $2); $$ = $1; }
              }
-             | StatementList VarDecl
-             {
-                 if ($1 == NULL) { $$ = $2; }
-                 else { add_sibling($1, $2); $$ = $1; }
-             }
              ;
 
 Statement: LBRACE StatementList RBRACE 

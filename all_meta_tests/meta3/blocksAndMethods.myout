@@ -1,13 +1,14 @@
-Line 5, col 16: Symbol a already defined
 Line 4, col 20: Operator >> cannot be applied to types double, double
+Line 4, col 8: Operator = cannot be applied to types int, undef
+Line 5, col 16: Symbol a already defined
 Line 13, col 9: Cannot find symbol a
 Line 13, col 9: Incompatible type undef in if statement
 Line 14, col 12: Cannot find symbol b
 Line 14, col 12: Incompatible type undef in while statement
 Line 15, col 9: Cannot find symbol a
-Line 15, col 9: Incompatible type undef in if statement
 Line 19, col 7: Cannot find symbol p
 Line 19, col 9: Operator = cannot be applied to types undef, int
+Line 15, col 9: Incompatible type undef in if statement
 ===== Class Main Symbol Table =====
 test1	(int,double)	int
 test2	()	int
@@ -43,7 +44,7 @@ Program
 ....MethodBody
 ......Assign - int
 ........Identifier(a) - int
-........Rshift - int
+........Rshift - undef
 ..........Add - double
 ............Identifier(c) - double
 ............Mul - int

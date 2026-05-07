@@ -1,7 +1,7 @@
 Line 37, col 3: unterminated string literal
 Line 46, col 1: unterminated comment
-Line 17, col 9: Symbol b already defined
 Line 9, col 6: Incompatible type String[] in if statement
+Line 17, col 9: Symbol b already defined
 Line 18, col 13: Cannot find symbol c
 Line 18, col 15: Operator = cannot be applied to types undef, int
 ===== Class newClass Symbol Table =====
@@ -68,9 +68,9 @@ Program
 ..............Natural(0) - int
 ............Natural(1) - int
 ..........Print
-............StrLit("The first argument is one")
+............StrLit("The first argument is one") - String
 ..........Print
-............StrLit("The value is something!")
+............StrLit("The value is something!") - String
 ........Block
 ......If
 ........Identifier(b) - boolean
@@ -80,7 +80,7 @@ Program
 ............Natural(10) - int
 ..........Block
 ..........Print
-............StrLit("Within the second else")
+............StrLit("Within the second else") - String
 ........Block
 ......VarDecl
 ........Int
@@ -138,11 +138,11 @@ Program
 ..........Identifier(b)
 ....MethodBody
 ......Print
-........StrLit("Arguments: a -> ")
+........StrLit("Arguments: a -> ") - String
 ......Print
 ........Identifier(a) - int
 ......Print
-........StrLit("b is: ")
+........StrLit("b is: ") - String
 ......Print
 ........Identifier(b) - int
 ..MethodDecl

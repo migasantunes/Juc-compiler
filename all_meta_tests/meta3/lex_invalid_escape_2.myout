@@ -17,4 +17,4 @@ Program
 ..........Identifier(args)
 ....MethodBody
 ......Print
-........StrLit("bad\\mescape")
+........StrLit("bad\\mescape") - String

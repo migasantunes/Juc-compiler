@@ -6,6 +6,7 @@ Line 5, col 19: Cannot find symbol c
 Line 5, col 20: Operator = cannot be applied to types undef, int
 Line 7, col 5: Cannot find symbol X
 Line 7, col 7: Number 1000000000000000000000 out of bounds
+Line 7, col 6: Operator = cannot be applied to types undef, int
 Line 9, col 6: Cannot find symbol a
 Line 9, col 7: Operator = cannot be applied to types undef, int
 Line 10, col 5: Cannot find symbol b
@@ -37,7 +38,7 @@ Program
 ............Natural(1) - int
 ......Assign - undef
 ........Identifier(X) - undef
-........Natural(1000000000000000000000) - undef
+........Natural(1000000000000000000000) - int
 ......Block
 ........Assign - undef
 ..........Identifier(a) - undef
