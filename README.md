@@ -1,79 +1,79 @@
 # jucompiler
 
-Compilador da linguagem Juc, desenvolvido em C com `lex` e `yacc`, cobrindo:
-- Meta 2: analise sintatica e AST
-- Meta 3: analise semantica, tabelas de simbolos e AST anotada
-- Meta 4: geracao de codigo LLVM IR
+Compiler for the Juc language, developed in C using `lex` and `yacc`, covering:
+- Stage 2: syntax analysis and AST
+- Stage 3: semantic analysis, symbol tables, and annotated AST
+- Stage 4: LLVM IR code generation
 
-O executavel final chama-se `jucompiler`, le do `stdin` e escreve para `stdout`.
+The final executable is called `jucompiler`, reads from `stdin`, and writes to `stdout`.
 
-## Estrutura do Projeto
+## Project Structure
 
-- `src/`: implementacao principal (AST, semantica, codegen, io)
-- `include/`: headers
-- `parser/`: `jucompiler.l` e `jucompiler.y`
-- `Makefile`: build principal
-- `README.md`: este ficheiro
+- `src/`: main implementation (AST, semantics, codegen, io)
+- `include/`: header files
+- `parser/`: `jucompiler.l` and `jucompiler.y`
+- `Makefile`: primary build file
+- `README.md`: this file
 
-Diretorias de apoio local (ignoradas no Git, ver `.gitignore`):
-- `tests/`: testcases locais (`all_meta_tests/...`)
-- `scripts/`: scripts locais de execucao de testes
-- `docs/`: relatorios/enunciados locais
-- `archive/`: historico local de entregas
-- `build/` e `bin/`: artefactos de compilacao
+Local support directories (ignored in Git, see `.gitignore`):
+- `tests/`: local test cases (`all_meta_tests/...`)
+- `scripts/`: local test execution scripts
+- `docs/`: local reports and specifications
+- `archive/`: local history of submissions
+- `build/` and `bin/`: build artifacts
 
-## Requisitos
+## Requirements
 
-Ferramentas necessarias no sistema:
-- `clang` (ou outro compilador C compativel)
+System tools required:
+- `clang` (or another compatible C compiler)
 - `make`
-- `lex` (ou `flex`)
-- `yacc` (ou `bison`)
-- `lli` (opcional, para executar LLVM IR em testes da meta 4)
+- `lex` (or `flex`)
+- `yacc` (or `bison`)
+- `lli` (optional, for executing LLVM IR in stage 4 tests)
 
-## Compilar
+## Building
 
 ```bash
 make
 ```
 
-Isto gera o executavel em `bin/jucompiler`.
+This generates the executable at `bin/jucompiler`.
 
-Para limpar artefactos:
+To clean artifacts:
 
 ```bash
 make clean
 ```
 
-## Modos de Execucao
+## Execution Modes
 
-Uso base:
+Basic usage:
 
 ```bash
-bin/jucompiler [opcao] < programa.java
+bin/jucompiler [option] < program.java
 ```
 
-Opcoes suportadas:
-- `-l`: analise lexical; imprime tokens e erros lexicais
-- `-e1`: analise lexical; imprime apenas erros lexicais
-- `-t`: analise sintatica; imprime erros lexicais/sintaticos e AST (se nao houver erros sintaticos)
-- `-e2`: analise sintatica; imprime apenas erros lexicais/sintaticos
-- `-s`: analise semantica; imprime erros semanticos, tabelas de simbolos e AST anotada
-- `-e3`: analise semantica; imprime apenas erros (com comportamento de `-e2` se houver erros lex/sint)
-- sem opcao: gera LLVM IR apenas se nao houver erros
+Supported options:
+- `-l`: lexical analysis; prints tokens and lexical errors
+- `-e1`: lexical analysis; prints only lexical errors
+- `-t`: syntax analysis; prints lexical/syntax errors and AST (if no syntax errors)
+- `-e2`: syntax analysis; prints only lexical/syntax errors
+- `-s`: semantic analysis; prints semantic errors, symbol tables, and annotated AST
+- `-e3`: semantic analysis; prints only errors (with `-e2` behavior if lex/syntax errors exist)
+- no option: generates LLVM IR only if there are no errors
 
-Exemplo (gerar IR):
+Example (generate IR):
 
 ```bash
 bin/jucompiler < Factorial.java > Factorial.ll
 ```
 
-Executar IR:
+Execute IR:
 
 ```bash
 lli Factorial.ll 7
 ```
 
-## Testes Locais
+## Local Tests
 
-Os testcases sao tratados como dados locais de desenvolvimento fornecidos pelo professor num repositorio de git privado.
+Test cases are treated as local development data provided by the instructor in a private Git repository.
