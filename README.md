@@ -1,6 +1,7 @@
 # jucompiler
 
 Compiler for the Juc language, developed in C using `lex` and `yacc`, covering:
+- Stage 1: lexical analysis
 - Stage 2: syntax analysis and AST
 - Stage 3: semantic analysis, symbol tables, and annotated AST
 - Stage 4: LLVM IR code generation
