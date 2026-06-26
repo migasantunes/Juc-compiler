@@ -1,0 +1,25 @@
+# Build outputs
+/build/
+/bin/
+
+# Legacy/generated parser artifacts
+/y.tab.c
+/y.tab.h
+/lex.yy.c
+/jucompiler
+/lexer
+
+# OS/editor files
+.DS_Store
+*.swp
+
+# Debug symbols (macOS)
+*.dSYM/
+
+# Archive files/docs
+/archive/
+/docs/
+
+# Tests&scripts
+/tests/
+/scripts/
